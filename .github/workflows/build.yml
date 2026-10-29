@@ -29,6 +29,13 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
           Write-Host "SkateCraft $v"
 
+      # ReSkate's Spotify device is Rust (SpotifyHelper); CMake links a Windows import library from
+      # cargo's registry, so the crates are fetched first.
+      - name: Rust crates for the Spotify device
+        shell: pwsh
+        working-directory: SpotifyHelper
+        run: cargo fetch --locked
+
       # A failing step's last lines also go out as an error annotation, readable without the full log.
       - name: Configure
         shell: pwsh
