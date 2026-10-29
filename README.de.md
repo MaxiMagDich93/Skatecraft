@@ -7,6 +7,27 @@ wieder F8 und skate dort weiter, wo du hingelaufen bist.
 
 🇬🇧 **English:** [README.md](README.md) · [Installation guide](SkateCraft/docs/INSTALL.en.md)
 
+## Was ist SkateCraft?
+
+SkateCraft bringt **Minecraft in skate.** Keine Nachbildung von Minecraft und keine reinkopierten
+Minecraft-Blöcke: Das echte Minecraft: Java Edition läuft im Hintergrund, mit *deinem* Konto und einer
+echten Minecraft-Welt – und skate. zeigt es dir.
+
+- **Werde in skate. zu deiner Minecraft-Figur** – eine Taste (**F8**) wechselt vom Skater zu deiner
+  Minecraft-Figur und zurück.
+- **Die Stadt von skate. ist deine Minecraft-Welt** – Straßen, Treppen, Rampen, Kanten und Dächer sind
+  für Minecraft fester Boden. Du läufst die Treppe einer Plaza hoch oder springst von einer Kante.
+- **Bau in der Stadt** – echte Minecraft-Blöcke abbauen und setzen. Sie erscheinen direkt in der Welt
+  von skate., mit den Texturen und dem Licht von Minecraft.
+- **Alles von Minecraft** – Schnellleiste, Inventar, Crafting, Chat, Survival-HUD, Sprinten, Schleichen,
+  F5-Kameras.
+- **Deine Welten** – jede Sitzung beginnt in einer frischen Welt; bis zu 9 Welten speicherst du mit
+  **Strg+1…9** und lädst sie mit **Strg+Umschalt+1…9** wieder.
+- **Weiterskaten, wo du hingelaufen bist** – F8 drücken und dein Skater steht dort, wo deine
+  Minecraft-Figur steht.
+- **Ein Installer** – richtet ein eigenes ReSkate ein (dein normales ReSkate bleibt unberührt) und
+  Minecraft mit dem Prism Launcher. F8 startet Minecraft sogar für dich.
+
 ## Download
 
 ➡️ **[Neuestes Release](https://github.com/MaxiMagDich93/Skatecraft/releases/latest)** –
@@ -37,13 +58,24 @@ einen Stern:
 Danke auch an [Prism Launcher](https://github.com/PrismLauncher/PrismLauncher),
 [Fabric](https://fabricmc.net/) und [e4mc](https://github.com/vgskye/e4mc-minecraft-architectury).
 
-## Wie es funktioniert
+## Wie funktioniert das? (einfach erklärt)
 
-skate. (mit ReSkate und SkateCraft) schickt den Boden der Stadt als Kollision, deine Tasten und die
-Maus an Minecraft und versteckt den Skater. Minecraft rechnet deine Figur, die Physik, die Blöcke, das
-Inventar und den Chat und schickt die Position, die Block-Modelle, die Texturen und sein HUD zurück.
-skate. malt die Blöcke in die Welt, das HUD auf den Bildschirm und setzt die Kamera auf die Augen deiner
-Minecraft-Figur. Beide reden über Shared Memory (`Local\SkateCraft_v1`, SkyCraft-Protokoll v11).
+Zwei Spiele laufen gleichzeitig und reden viele Male pro Sekunde miteinander:
+
+1. **skate.** (mit ReSkate und eingebautem SkateCraft) schießt tausende unsichtbare Strahlen nach unten
+   auf die Stadt um dich herum und sagt Minecraft, wo Boden, Wände und Bordsteine sind. Minecraft macht
+   daraus unsichtbare Kollision – so kann seine Figur auf der Welt von skate. laufen.
+2. Deine **Tastatur und Maus** gehen im Minecraft-Modus an Minecraft. skate. versteckt Skater und Board.
+3. **Minecraft** steuert deine Figur ganz normal – laufen, springen, Schwerkraft, Blöcke abbauen und
+   setzen, Inventar – in seinem eigenen, versteckten Fenster.
+4. Minecraft schickt zurück, **wo deine Figur steht und wohin sie schaut**, die **Blöcke, die du gebaut
+   hast** (als 3D-Modelle mit den Texturen) und ein Bild seines **HUD** (Schnellleiste, Herzen, Inventar,
+   Chat).
+5. skate. setzt seine **Kamera auf die Augen deiner Minecraft-Figur**, malt die **Blöcke in die Stadt**
+   und das **HUD darüber** – was du siehst, ist die Welt von skate., gespielt als Minecraft.
+
+Beide reden über einen gemeinsamen Speicherbereich auf deinem PC (`Local\SkateCraft_v1`) mit dem
+Protokoll von SkyCraft. Nichts geht übers Internet.
 
 Bekannte Grenzen im Moment: Blöcke sieht man durch Wände von skate., kein Avatar in F5, keine
 animierten Block-Texturen, und nur Tastatur und Maus gehen an Minecraft.

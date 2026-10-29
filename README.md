@@ -7,6 +7,46 @@ again and skate on from where you walked to.
 
 🇩🇪 **Deutsch:** [README.de.md](README.de.md) · [Installationsanleitung](SkateCraft/docs/INSTALL.de.md)
 
+## What is SkateCraft?
+
+SkateCraft puts **Minecraft inside skate.** Not a copy of Minecraft and not Minecraft blocks pasted into
+the game: the real Minecraft: Java Edition runs in the background, with *your* account and
+a real Minecraft world – and skate. shows it to you.
+
+- **Become your Minecraft player in skate.** – one key (**F8**) switches from your skater to your
+  Minecraft character and back.
+- **skate.'s city is your Minecraft world** – the streets, stairs, ramps, ledges and rooftops are solid
+  ground for Minecraft. You walk up the stairs of a plaza or jump off a ledge.
+- **Build in the city** – break and place real Minecraft blocks. They appear right in skate.'s world,
+  with Minecraft's textures and lighting.
+- **Everything Minecraft has** – hotbar, inventory, crafting, chat, the survival HUD, sprint, sneak,
+  F5 camera modes.
+- **Your worlds** – every session starts in a fresh world; save up to 9 worlds with **Ctrl+1…9** and
+  load them again with **Ctrl+Shift+1…9**.
+- **Skate on where you walked to** – press F8 and your skater appears where your Minecraft player
+  stands.
+- **One installer** – sets up its own ReSkate (your normal ReSkate stays untouched) and Minecraft with
+  Prism Launcher. F8 even starts Minecraft for you.
+
+## How does it work? (simple version)
+
+Two games run at the same time and talk to each other many times per second:
+
+1. **skate.** (with ReSkate and SkateCraft built in) shoots thousands of invisible rays down onto the
+   city around you and tells Minecraft where the ground, walls and kerbs are. Minecraft turns that into
+   invisible collision, so its player can walk on skate.'s world.
+2. Your **keyboard and mouse** go to Minecraft while you are in Minecraft mode. skate. hides your
+   skater and board.
+3. **Minecraft** runs your player as usual – walking, jumping, gravity, breaking and placing blocks,
+   the inventory – in its own hidden window.
+4. Minecraft sends back **where your player is and where it looks**, the **blocks you built** (as 3D
+   meshes with its texture atlas) and a picture of its **HUD** (hotbar, hearts, inventory, chat).
+5. skate. puts its **camera at your Minecraft player's eyes**, draws the **blocks into the city** and the
+   **HUD on top** – so what you see is skate.'s world, played as Minecraft.
+
+The two talk through a block of shared memory on your PC (`Local\SkateCraft_v1`), using SkyCraft's
+protocol. Nothing goes over the internet.
+
 ## Download
 
 ➡️ **[Latest release](https://github.com/MaxiMagDich93/Skatecraft/releases/latest)** – download
@@ -36,7 +76,7 @@ SkateCraft stands on the shoulders of two amazing projects. Please go and star t
 Thanks also to [Prism Launcher](https://github.com/PrismLauncher/PrismLauncher),
 [Fabric](https://fabricmc.net/) and [e4mc](https://github.com/vgskye/e4mc-minecraft-architectury).
 
-## How it works
+## How it works (technical)
 
 ```
 ┌──────── Skate.exe + ReSkate.dll (with SkateCraft) ────────┐      ┌── Minecraft (Prism) + SkyCraft mod ──┐
