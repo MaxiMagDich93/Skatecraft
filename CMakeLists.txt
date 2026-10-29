@@ -228,6 +228,7 @@ if(DINGOSDK_BUILD_MULTIPLAYER_TESTS)
 endif()
 option(DINGOSDK_BUILD_SKATECRAFT_TESTS "Build SkateCraft's tests (shared-memory protocol, collision, input)" OFF)
 if(DINGOSDK_BUILD_SKATECRAFT_TESTS)
+    enable_testing()
     add_executable(dingosdk_skatecraft_tests Extension/SkateCraft/Test/skatecraft_tests.cpp
         Extension/SkateCraft/link.cpp Extension/SkateCraft/collision_feed.cpp Extension/SkateCraft/input_map.cpp
         Extension/SkateCraft/player_drive.cpp Extension/SkateCraft/overlay_feed.cpp)
