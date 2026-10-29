@@ -110,7 +110,8 @@ The installer is made by [`.github/workflows/build.yml`](.github/workflows/build
 above, packs SkyCraft's Minecraft with
 [`SkateCraft/installer/make_minecraft_bundle.ps1`](SkateCraft/installer/make_minecraft_bundle.ps1) and
 compiles [`SkateCraft/installer/SkateCraft.iss`](SkateCraft/installer/SkateCraft.iss) with Inno
-Setup 6. Pushing a tag `v1.2.3` publishes a release.
+Setup 6. A push to `main` with a new version in [`SkateCraft/VERSION`](SkateCraft/VERSION) publishes
+a release.
 
 ## License
 
