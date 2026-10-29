@@ -231,7 +231,8 @@ if(DINGOSDK_BUILD_SKATECRAFT_TESTS)
     enable_testing()
     add_executable(dingosdk_skatecraft_tests Extension/SkateCraft/Test/skatecraft_tests.cpp
         Extension/SkateCraft/link.cpp Extension/SkateCraft/collision_feed.cpp Extension/SkateCraft/input_map.cpp
-        Extension/SkateCraft/player_drive.cpp Extension/SkateCraft/overlay_feed.cpp Extension/SkateCraft/world_mesh.cpp)
+        Extension/SkateCraft/player_drive.cpp Extension/SkateCraft/overlay_feed.cpp Extension/SkateCraft/world_mesh.cpp
+        Extension/SkateCraft/world_saves.cpp)
     target_include_directories(dingosdk_skatecraft_tests PRIVATE "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/External/skycraft_protocol")
     add_test(NAME skatecraft COMMAND dingosdk_skatecraft_tests)
 endif()

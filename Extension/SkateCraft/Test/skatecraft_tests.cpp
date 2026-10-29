@@ -8,6 +8,9 @@
 #include "Extension/SkateCraft/overlay_feed.h"
 #include "Extension/SkateCraft/player_drive.h"
 #include "Extension/SkateCraft/world_mesh.h"
+#include "Extension/SkateCraft/world_saves.h"
+#include <filesystem>
+#include <fstream>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -319,6 +322,48 @@ void blocks_from_minecraft() {
     check(wm::section_count() == 0, "a short section is ignored");
     wm::set_shown(false);
 }
+
+void worlds_kept_and_loaded() {
+    namespace ws = dingosdk::skatecraft::world_saves;
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / ("skatecraft-worlds-" + std::to_string(std::rand()));
+    fs::remove_all(root);
+    const ws::Paths p{root / "saves" / "SkyCraft", root / "Welten"};
+    const auto make_world = [&](const std::string& marker) {
+        fs::create_directories(p.world / "region");
+        std::ofstream(p.world / "level.dat") << marker;
+        std::ofstream(p.world / "region" / "r.0.0.mca") << marker;
+        std::ofstream(p.world / "session.lock") << "locked";
+    };
+    const auto marker = [](const fs::path& world) {
+        std::ifstream in(world / "level.dat");
+        std::string text;
+        std::getline(in, text);
+        return text;
+    };
+    // First run ever: nothing to move, a new world.
+    check(ws::prepare(p, std::nullopt).starts_with("Neue"), "a new world the first time");
+    make_world("A");
+    // Ctrl+1 while playing: copied now, without the lock Minecraft holds.
+    ws::keep(p, 1);
+    check(marker(p.store / "Platz 1") == "A" && !fs::exists(p.store / "Platz 1" / "session.lock") &&
+              fs::exists(p.store / "Platz 1" / "region" / "r.0.0.mca"), "Ctrl+1 copies the world, lock left out");
+    // Built on after Ctrl+1, then quit: the next start keeps that last state, then starts anew.
+    std::ofstream(p.world / "level.dat") << "A2";
+    check(ws::prepare(p, std::nullopt).starts_with("Neue"), "a new world on the next start");
+    check(!fs::exists(p.world) && marker(p.store / "Platz 1") == "A2" && marker(p.store / "Letzte Sitzung") == "A2",
+          "the last state is in place 1 and in the last run's place");
+    // Ctrl+Shift+1 before F8: place 1 is the world this run.
+    make_world("B");
+    check(ws::prepare(p, 1) == "Platz 1 geladen.", "place 1 loaded");
+    check(marker(p.world) == "A2" && marker(p.store / "Letzte Sitzung") == "B", "place 1 is the world; B is the last run's");
+    // Ctrl+Shift+0 once playing: the last run's world at the next start.
+    check(ws::load_next_start(p, 0).find("n\xc3\xa4" "chsten Start") != std::string::npos, "loading waits for the next start");
+    ws::prepare(p, std::nullopt);
+    check(marker(p.world) == "B", "the last run's world back");
+    check(ws::load_next_start(p, 7) == "Platz 7 ist leer.", "an empty place is said to be empty");
+    fs::remove_all(root);
+}
 }
 
 int main() {
@@ -327,7 +372,8 @@ int main() {
         {"coordinates", coordinates},             {"collision: flat ground and a kerb", collision_flat_ground_and_step},
         {"collision: the skater skipped", collision_skips_the_skater}, {"triangles across regions", triangles_span_regions},
         {"keys and buttons", keys_and_buttons},   {"player between ticks", player_between_ticks},
-        {"overlay alpha", overlay_premultiplied}, {"blocks from Minecraft", blocks_from_minecraft}};
+        {"overlay alpha", overlay_premultiplied}, {"blocks from Minecraft", blocks_from_minecraft},
+        {"worlds kept and loaded", worlds_kept_and_loaded}};
     int failed = 0;
     for (const auto& [name, test] : tests) {
         try {

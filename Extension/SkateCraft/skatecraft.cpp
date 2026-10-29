@@ -6,6 +6,7 @@
 #include "overlay_feed.h"
 #include "player_drive.h"
 #include "world_mesh.h"
+#include "world_saves.h"
 #include "Engine/Core/Log/logging.h"
 #include "Extension/Plugins/plugin_game_runtime.h"
 #include "Extension/Plugins/plugin_ui.h"
@@ -14,12 +15,14 @@
 #include "Extension/UI/Overlay/overlay.h"
 #include <Windows.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <functional>
 #include <numbers>
+#include <optional>
 #include <string>
 
 namespace dingosdk::skatecraft {
@@ -59,7 +62,12 @@ struct State {
     // The skater is held still by noclip with no input (plugin_game_runtime freeze). Noclip starts only
     // with the game's own camera, so the camera waits for it, asking again now and then.
     double driving_since{}, freeze_asked_at{};
-    std::uint32_t mc_flags{}; // Minecraft's last state flags
+    std::uint32_t mc_flags{}, mc_ack{}; // Minecraft's last state flags and the teleport it acknowledged
+    bool last_menu{}, last_noclip{}, last_in_game{}; // for `skatecraft status`
+    // The Minecraft world (world_saves.h): chosen once a run, just before the shared memory opens.
+    bool world_chosen{};
+    std::optional<int> load_place;
+    std::array<bool, 10> digit_was{};
     std::optional<PlayerFrame> last_frame;
 };
 State& state() {
@@ -104,6 +112,8 @@ plugins::Game* game() { return plugins::existing_game(); }
 void start_driving(plugins::Game& g, State& s) {
     if (const auto why = g.hide_skater(self, true); !why.empty()) log_info("hiding the skater: " + why);
     if (const auto why = g.freeze(self, true); !why.empty()) log_info("holding the skater still: " + why);
+    // The board too, which the hidden skater still carries or stands on (bones 2 to 15: all its parts).
+    for (int bone = 2; bone <= 15; ++bone) g.board_hide(self, bone, false);
     s.driving = true;
     s.driving_since = s.freeze_asked_at = seconds_now();
     s.edges.release_all();
@@ -123,6 +133,7 @@ void stop_driving(plugins::Game& g, State& s, LinkView& link, bool put_skater_th
     g.release_camera(self);
     g.game_keys(self, {});
     g.hide_skater(self, false);
+    g.board_clear(self, -1);
     g.freeze(self, false);
     link.push_input(proto::kInReleaseAll, 0);
     s.edges.release_all();
@@ -215,6 +226,29 @@ void forward_input(plugins::Game& g, State& s, LinkView& link, const proto::McSt
     }
 }
 
+// Ctrl+1..9 keeps the world in a place, Ctrl+Shift+1..9 loads one (0: the last run's), as
+// world_saves.h says.
+void world_keys(plugins::Game& g, State& s) {
+    const bool ctrl = g.key_down(VK_CONTROL), shift = g.key_down(VK_SHIFT), allowed = g.input_allowed();
+    for (int place = 0; place <= 9; ++place) {
+        const bool down = allowed && ctrl && g.key_down('0' + place);
+        if (down && !s.digit_was[static_cast<std::size_t>(place)]) {
+            const auto paths = world_saves::default_paths();
+            if (shift) {
+                if (!world_saves::place_exists(paths, place)) notice(world_saves::place_name(place) + " ist leer.");
+                else if (!s.world_chosen) {
+                    s.load_place = place;
+                    notice(world_saves::place_name(place) + " wird geladen, sobald du F8 dr\xc3\xbc" "ckst.");
+                } else
+                    notice(world_saves::load_next_start(paths, place));
+            } else if (place >= 1) {
+                notice(s.world_chosen ? world_saves::keep(paths, place) : "Noch keine Welt zum Speichern: dr\xc3\xbc" "ck erst F8.");
+            }
+        }
+        s.digit_was[static_cast<std::size_t>(place)] = down;
+    }
+}
+
 void drain_minecraft(LinkView& link, bool driving) {
     // Minecraft's block meshes and atlas (the render ring), kept for drawing them in skate.'s world
     // (world_mesh.h). Taken while it is not shown too, so nothing built is missing when it is.
@@ -252,8 +286,15 @@ void tick(bool ready, bool noclip) noexcept {
         if (toggle && !s.toggle_was_down) notice(set_enabled(!s.enabled));
         s.toggle_was_down = toggle;
         auto& link = Link::get();
+        world_keys(*g, s);
         if (!s.enabled) return;
         if (!link.valid()) {
+            if (!s.world_chosen) {
+                // Before Minecraft can link up and open its world: which world it is.
+                if (const auto said = world_saves::prepare(world_saves::default_paths(), s.load_place); !said.empty()) notice(said);
+                s.world_chosen = true;
+                s.load_place.reset();
+            }
             if (const auto why = link.create(); !why.empty()) {
                 s.enabled = false;
                 notice("Could not open the shared memory: " + why, true);
@@ -290,6 +331,7 @@ void tick(bool ready, bool noclip) noexcept {
         } else {
             s.waiting_told = false;
             s.mc_flags = mc.flags;
+            s.mc_ack = mc.teleportAck;
             s.drive.observe(mc);
             drain_minecraft(view, s.driving);
         }
@@ -311,6 +353,9 @@ void tick(bool ready, bool noclip) noexcept {
 
         const auto focus = g->input_focus();
         const bool menu = !g->input_allowed() || !focus.gameplay || focus.interface_open;
+        s.last_menu = menu;
+        s.last_noclip = noclip;
+        s.last_in_game = in_game;
         const auto display = plugin_ui::display();
         proto::SkyState sky{};
         sky.flags = (in_game ? proto::kSkyInGame : 0u) | (menu ? proto::kSkyMenuOpen : 0u) | (!ready ? proto::kSkyLoading : 0u);
@@ -437,6 +482,11 @@ std::string status() {
                         world_mesh::section_count());
     if (s.last_frame)
         text += std::format("; Minecraft feet {:.2f} {:.2f} {:.2f}", s.last_frame->feet.x, s.last_frame->feet.y, s.last_frame->feet.z);
+    // Why Minecraft's player might not move: held for a teleport (ack behind), a Minecraft screen open,
+    // a menu taking the keys, the skater not in the game, noclip not holding the skater.
+    text += std::format("; teleport {}/{}; Minecraft flags 0x{:x}{}; menu {}; in game {}; noclip {}", s.mc_ack, s.teleport_seq, s.mc_flags,
+                        (s.mc_flags & proto::kMcScreenOpen) ? " (a screen is open)" : "", s.last_menu ? 1 : 0, s.last_in_game ? 1 : 0,
+                        s.last_noclip ? 1 : 0);
     return text;
 }
 
