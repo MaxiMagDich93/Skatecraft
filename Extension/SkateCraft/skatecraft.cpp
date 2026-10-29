@@ -30,6 +30,7 @@ constexpr int toggle_vk = VK_F8;
 constexpr std::uint32_t toggle_dik = 0x42; // F8
 constexpr double skater_follow_metres = 25; // collision only streams in near the skater
 constexpr double skater_follow_seconds = 3;
+constexpr double skater_follow_most_metres = 150;
 
 void log_info(std::string_view text) { logging::log(logging::Level::info, logging::Channel::runtime, "SkateCraft: {}", text); }
 void notice(std::string_view text, bool error = false) {
@@ -53,6 +54,7 @@ struct State {
     double cursor_x{}, cursor_y{};
     bool screen_was_open{};
     double skater_moved_at{-100};
+    bool arrived_before{}; // Minecraft had acknowledged the current teleport last tick
     std::optional<PlayerFrame> last_frame;
 };
 State& state() {
@@ -246,6 +248,11 @@ void tick(bool ready) noexcept {
             s.look.pitch = 0;
             ++s.teleport_seq;
             s.arrive = false;
+            // Minecraft's ticks from before the move are of another place (with the X axis newly
+            // mirrored, another place entirely): the camera, the ground and the skater must not
+            // follow them.
+            s.drive.forget();
+            s.last_frame.reset();
             log_info(std::format("Minecraft's player goes to {:.1f} {:.1f} {:.1f}", s.teleport_to.x, s.teleport_to.y, s.teleport_to.z));
         }
 
@@ -281,7 +288,17 @@ void tick(bool ready) noexcept {
         }
 
         const bool arrived = have && in_game && (mc.flags & proto::kMcInWorld) && mc.teleportAck == s.teleport_seq;
-        if (!arrived) return;
+        if (!arrived) {
+            s.arrived_before = false;
+            return;
+        }
+        if (!s.arrived_before) {
+            // Just arrived: only ticks from here on, and the skater stays put for a moment.
+            s.arrived_before = true;
+            s.drive.forget();
+            s.drive.observe(mc);
+            s.skater_moved_at = seconds_now();
+        }
         if (!s.driving) start_driving(*g, s);
 
         forward_input(*g, s, view, mc, menu);
@@ -303,7 +320,10 @@ void tick(bool ready) noexcept {
         // (and its collision) where Minecraft's player is.
         const auto feet = s.mapping.to_game(frame->feet);
         const double dx = feet[0] - skater.position[0], dz = feet[2] - skater.position[2];
-        if (std::hypot(dx, dz) > skater_follow_metres && seconds_now() - s.skater_moved_at > skater_follow_seconds &&
+        // Never further than a walk could take the player in a few seconds: a jump of hundreds of
+        // metres means the frame is wrong, and the skater would land somewhere it should not be.
+        const double away = std::hypot(dx, dz);
+        if (away > skater_follow_metres && away < skater_follow_most_metres && seconds_now() - s.skater_moved_at > skater_follow_seconds &&
             !local_skater_teleport_pending()) {
             teleport_local_skater_heading(feet, skater.heading * std::numbers::pi_v<float> / 180);
             s.skater_moved_at = seconds_now();
