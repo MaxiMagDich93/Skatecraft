@@ -707,7 +707,10 @@ ImTextureID upload_image(State& s, const CardPixels& pixels, UINT slot, ComPtr<I
 void upload_minecraft_overlay(State& s) {
     if (!s.device || !s.srvs || !s.commands) return;
     if (!skatecraft::overlay_feed::shown()) {
+        // Hidden (F8 gave skate. the board back): the texture is made again, with its view, for the
+        // first frame once it is shown again. Keeping it would leave it without a view to draw.
         s.minecraft_id = {};
+        s.minecraft_width = s.minecraft_height = 0;
         return;
     }
     // Still copying the last one: this frame keeps showing it (no wait, and no event left set).
@@ -991,7 +994,7 @@ void render(IDXGISwapChain* presented, UINT flags) {
     ImGui::NewFrame();
     // SkateCraft's picture of Minecraft's screen, under everything ReSkate draws.
     const bool minecraft_frame = skatecraft::overlay_feed::shown() || minecraft_world::pending();
-    if (minecraft_frame && s.minecraft_id) ImGui::GetBackgroundDrawList()->AddImage(s.minecraft_id, ImVec2(0, 0), ImGui::GetIO().DisplaySize);
+    if (skatecraft::overlay_feed::shown() && s.minecraft_id) ImGui::GetBackgroundDrawList()->AddImage(s.minecraft_id, ImVec2(0, 0), ImGui::GetIO().DisplaySize);
     if (menu_frame) {
         draw_menu();
         draw_plugin_screen();
