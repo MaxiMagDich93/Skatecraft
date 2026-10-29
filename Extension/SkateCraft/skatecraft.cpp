@@ -64,6 +64,12 @@ struct State {
     double driving_since{}, freeze_asked_at{};
     std::uint32_t mc_flags{}, mc_ack{}; // Minecraft's last state flags and the teleport it acknowledged
     bool last_menu{}, last_noclip{}, last_in_game{}; // for `skatecraft status`
+    std::uint64_t keys_sent{}, buttons_sent{}, ticks_seen{};
+    std::uint16_t last_key{};
+    bool last_key_down{};
+    DVec3 mc_now{};          // Minecraft's own latest tick position, uninterpolated
+    std::int64_t last_tick_qpc{};
+    int key_logs{};          // the first key events are logged, to see what reaches Minecraft
     // The Minecraft world (world_saves.h): chosen once a run, just before the shared memory opens.
     bool world_chosen{};
     std::optional<int> load_place;
@@ -195,6 +201,17 @@ void forward_input(plugins::Game& g, State& s, LinkView& link, const proto::McSt
     s.edges.poll(down, dik_from_vk, toggle_dik, screen, s.changes, s.swallow);
     for (const auto& change : s.changes) {
         link.push_input(change.kind == InputEdge::mouse ? proto::kInMouseButton : proto::kInKey, change.code, change.down ? 1 : 0);
+        if (change.kind == InputEdge::key) {
+            ++s.keys_sent;
+            s.last_key = change.code;
+            s.last_key_down = change.down;
+        } else
+            ++s.buttons_sent;
+        if (s.key_logs < 40) {
+            ++s.key_logs;
+            log_info(std::format("to Minecraft: {} {} {} (virtual key 0x{:x})", change.kind == InputEdge::mouse ? "button" : "key", change.code,
+                                 change.down ? "down" : "up", change.vk));
+        }
         // In a Minecraft screen (chat, a sign, a book, the search box) a key also types what it
         // says, with the keyboard's own layout, as Windows would turn it into a character.
         if (screen && change.down && change.kind == InputEdge::key)
@@ -332,6 +349,11 @@ void tick(bool ready, bool noclip) noexcept {
             s.waiting_told = false;
             s.mc_flags = mc.flags;
             s.mc_ack = mc.teleportAck;
+            s.mc_now = {mc.curX, mc.curY, mc.curZ};
+            if (mc.tickQpc != s.last_tick_qpc) {
+                s.last_tick_qpc = mc.tickQpc;
+                ++s.ticks_seen;
+            }
             s.drive.observe(mc);
             drain_minecraft(view, s.driving);
         }
@@ -484,6 +506,24 @@ std::string status() {
         text += std::format("; Minecraft feet {:.2f} {:.2f} {:.2f}", s.last_frame->feet.x, s.last_frame->feet.y, s.last_frame->feet.z);
     // Why Minecraft's player might not move: held for a teleport (ack behind), a Minecraft screen open,
     // a menu taking the keys, the skater not in the game, noclip not holding the skater.
+    text += std::format("; Minecraft itself at {:.2f} {:.2f} {:.2f}, {} ticks; sent {} keys (last {} {}), {} buttons", s.mc_now.x, s.mc_now.y,
+                        s.mc_now.z, s.ticks_seen, s.keys_sent, s.last_key, s.last_key_down ? "down" : "up", s.buttons_sent);
+    // The ground skate.'s rays find right around Minecraft's player (feet height, then at 1 m in eight
+    // directions): a wall or a raised patch here is what would hold the player in place.
+    if (s.last_frame) {
+        const auto feet = s.mapping.to_game(s.last_frame->feet);
+        const auto at = [&](float dx, float dz) {
+            const auto h = local_ground_height(feet[0] + dx, feet[2] + dz, feet[1] + 3.0f, feet[1] - 48.0f);
+            return h ? std::format("{:+.2f}", *h - feet[1]) : std::string("-");
+        };
+        text += "; ground here " + at(0, 0) + ", around";
+        for (int k = 0; k < 8; ++k) {
+            const double angle = k * std::numbers::pi / 4;
+            text += " " + at(static_cast<float>(std::sin(angle)), static_cast<float>(std::cos(angle)));
+        }
+        const auto skater = trainer::telemetry();
+        text += std::format("; skater at {:.2f} {:.2f} {:.2f}", skater.position[0], skater.position[1], skater.position[2]);
+    }
     text += std::format("; teleport {}/{}; Minecraft flags 0x{:x}{}; menu {}; in game {}; noclip {}", s.mc_ack, s.teleport_seq, s.mc_flags,
                         (s.mc_flags & proto::kMcScreenOpen) ? " (a screen is open)" : "", s.last_menu ? 1 : 0, s.last_in_game ? 1 : 0,
                         s.last_noclip ? 1 : 0);
