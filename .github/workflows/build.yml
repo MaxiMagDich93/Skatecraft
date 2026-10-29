@@ -1,0 +1,86 @@
+# Builds SkateCraft on Windows: ReSkate.dll and ReSkateLauncher.exe (with SkateCraft), runs SkateCraft's
+# tests, packs SkyCraft's Minecraft and makes the installer. A tag v1.2.3 also publishes a release with
+# the installer and a portable zip.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $ref = "${{ github.ref }}"
+          if ($ref -like "refs/tags/v*") { $v = $ref.Substring(11) } else { $v = "0.0.0-dev" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "SkateCraft $v"
+
+      - name: Configure
+        shell: pwsh
+        run: cmake --preset vs2022-x64 -DDINGOSDK_BUILD_SKATECRAFT_TESTS=ON
+
+      - name: Build ReSkate.dll, ReSkateLauncher.exe and the tests
+        shell: pwsh
+        run: cmake --build build/vs2022-x64 --config Release --parallel 4 --target dingosdk_runtime dingosdk_launcher dingosdk_skatecraft_tests
+
+      - name: SkateCraft tests
+        shell: pwsh
+        run: |
+          & build/vs2022-x64/Release/dingosdk_skatecraft_tests.exe
+          if ($LASTEXITCODE) { throw "SkateCraft's tests failed" }
+
+      - name: Minecraft bundle (SkyCraft's Minecraft, renamed for SkateCraft)
+        shell: pwsh
+        run: ./SkateCraft/installer/make_minecraft_bundle.ps1 -Out build/minecraft
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress | Out-Null
+          }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup is not installed" }
+          $root = (Get-Location).Path
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DBinDir=$root\build\vs2022-x64\Release" `
+            "/DBundleDir=$root\build\minecraft" "/DRepoDir=$root" "/O$root\dist" "SkateCraft\installer\SkateCraft.iss"
+          if ($LASTEXITCODE) { throw "the installer did not build" }
+
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          $stage = "build/portable"
+          New-Item -ItemType Directory -Force "$stage/ReSkate", "$stage/Minecraft" | Out-Null
+          Copy-Item build/vs2022-x64/Release/ReSkateLauncher.exe, build/vs2022-x64/Release/ReSkate.dll "$stage/ReSkate"
+          Copy-Item -Recurse build/minecraft/* "$stage/Minecraft"
+          Copy-Item LICENSE "$stage/LICENSE-ReSkate-and-SkateCraft.txt"
+          Copy-Item SkateCraft/docs/INSTALL.en.md, SkateCraft/docs/INSTALL.de.md, SkateCraft/installer/share_game_files.ps1 $stage
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/SkateCraft-$v-portable.zip"
+          Get-ChildItem dist | ForEach-Object { "{0,-45} {1,12:N0} bytes" -f $_.Name, $_.Length }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkateCraft-${{ steps.version.outputs.version }}
+          path: dist/*
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: SkateCraft/docs/RELEASE_NOTES.md

@@ -5,7 +5,7 @@ Notes for AI coding agents working on ReSkate. People may find them useful too.
 ReSkate is a launcher (`ReSkateLauncher.exe`) and a runtime (`ReSkate.dll`) loaded into EA's
 `Skate.exe`, plus a dedicated server. Internally it is still called DingoSDK: CMake options and targets
 are `DINGOSDK_*` and `dingosdk_*`. [STRUCTURE.md](STRUCTURE.md) says where everything lives and
-[README.md](README.md) covers using and building it; read STRUCTURE.md before looking for code.
+[README.ReSkate.md](README.ReSkate.md) covers using and building it (SkateCraft: [README.md](README.md)); read STRUCTURE.md before looking for code.
 
 ## Build
 

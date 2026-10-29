@@ -1,0 +1,24 @@
+﻿SkateCraft - walk skate.'s world as your Minecraft player, and build in it.
+
+Before you install, you need:
+
+  1. skate. on Steam, on your Steam account. SkateCraft runs it through ReSkate
+     (the fan-made launcher and mod platform for skate.).
+  2. Minecraft: Java Edition, on your Microsoft account.
+  3. About 16 GB of free space: about 14 GB for skate. (unless you take the files
+     from a ReSkate you already have) and about 1-2 GB for Minecraft.
+  4. Windows 10 or 11, 64-bit.
+
+What gets installed:
+
+  - A ReSkate of its own, with SkateCraft in it, in the folder you choose next.
+    Your normal ReSkate (if you have one) stays as it is.
+  - SkyCraft's Minecraft (Prism Launcher with a "SkateCraft" instance) in
+    %LOCALAPPDATA%\SkateCraft. Minecraft itself and Java are downloaded by
+    Prism the first time you sign in.
+
+Nothing from EA, Mojang or Microsoft is included.
+
+SkateCraft is built on ReSkate by Dingo-Shenanigans and on SkyCraft by
+chasmlol. Thank you both! It is a fan project, not affiliated with EA, Full
+Circle, Mojang or Microsoft.

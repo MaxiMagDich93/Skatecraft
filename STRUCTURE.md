@@ -1,7 +1,7 @@
 # ReSkate structure
 
 How the repository is laid out, what each part builds into, and where a feature's code lives.
-For building and using ReSkate, see [README.md](README.md).
+For building and using ReSkate, see [README.ReSkate.md](README.ReSkate.md); for SkateCraft, [README.md](README.md).
 
 ## What gets built
 
@@ -56,7 +56,8 @@ ReSkate/
 ├── assets/                files embedded into the binaries
 ├── config/defaults/       default profile/settings JSON embedded into ReSkate.dll
 ├── contrib/               server hosting files, design notes, release script
-├── README.md, LICENSE
+├── SkateCraft/            SkateCraft installer (Inno Setup), Minecraft bundle script, install guides
+├── README.md, README.de.md (SkateCraft), README.ReSkate.md, LICENSE
 └── .clangd, .gitattributes, .gitignore
 ```
 
