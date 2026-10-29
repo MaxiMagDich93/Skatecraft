@@ -15,7 +15,9 @@
 namespace dingosdk::skatecraft {
 namespace {
 template<class T> std::atomic_ref<T> atomic(T& value) { return std::atomic_ref<T>(value); }
-constexpr std::uint64_t minecraft_timeout_ms = 3000;
+// Minecraft's render thread, which beats, stops for several seconds while it opens its world
+// (hidden, nobody sees it); SkyCraft's own Java side gives Skyrim 8 s for the same reason.
+constexpr std::uint64_t minecraft_timeout_ms = 10000;
 
 template<class T> void seqlock_write(T* dst, const T& value) {
     auto seq = atomic(*reinterpret_cast<std::uint32_t*>(dst));

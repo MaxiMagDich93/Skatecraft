@@ -190,6 +190,10 @@ void CollisionFeed::tick(LinkView& link, const Mapping& mapping, const DVec3& pl
         }
         const std::pair<int, int> column{scan.cx, scan.cz};
         auto regions = triangulate(scan.cx, scan.cz, s_.step, scan.heights);
+        // Every region the rays went through is sent, the empty ones too: Minecraft holds a player
+        // still until the regions at and below their feet are known (SkyClient.holdUntilReady), and
+        // the air above the ground is known to be empty only when it is sent.
+        for (int ry = floor_div(scan.bottom, region_size); ry <= floor_div(scan.top, region_size); ++ry) regions[ry];
         scanned_at_[column] = now;
         scan_.reset();
         if (!send_column(link, column.first, column.second, regions)) {

@@ -22,6 +22,9 @@
 // Minecraft as kColTris messages, one per 8-block region they touch. Minecraft's TriCollider walks
 // on them with its own physics; steep triangles (a curb, a ledge, a wall) are walls to it.
 //
+// Every region a column's rays pass through is sent, empty or not, so Minecraft knows the air is
+// air: SkyCraft's client holds the player still until the regions around their feet are known.
+//
 // Limits of this stage, to be lifted by reading the physics shapes later: no overhangs inside one
 // column (the underside of a ledge you stand beside), walls are as thick as one sample cell, and
 // thin things a ray can miss (a rail, a fence post) may be missing.

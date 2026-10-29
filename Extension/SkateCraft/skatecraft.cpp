@@ -228,7 +228,7 @@ void tick(bool ready) noexcept {
                 notice("Minecraft stopped answering; skate. has the player again.", true);
             }
             if (!s.waiting_told) {
-                notice("Waiting for Minecraft. Start it with SkyCraft's mod and -Dskycraft.link=Local\\SkateCraft_v1 (README, phase 1).");
+                notice("Waiting for Minecraft. Start it with SkyCraft's mod and -Dskycraft.link=SkateCraft_v1 (README, phase 1).");
                 s.waiting_told = true;
             }
             s.drive.forget();
@@ -267,6 +267,19 @@ void tick(bool ready) noexcept {
         sky.gameHour = 12; // skate.'s time of day could drive Minecraft's sky later; it is not drawn yet
         view.write_sky_state(sky);
 
+        // skate.'s ground, as rays straight down through its physics world. It is sent before the
+        // player arrives too: Minecraft holds its player still where it is to appear until the
+        // ground there is known, and only then says it has arrived.
+        const RayFn ray = [](const Vec3& from, const Vec3& to) -> std::optional<Vec3> {
+            const auto ground = local_ground_height(from[0], from[2], from[1], to[1]);
+            if (!ground) return std::nullopt;
+            return Vec3{from[0], *ground, from[2]};
+        };
+        if (have && in_game) {
+            const DVec3 around = s.driving && s.last_frame ? s.last_frame->feet : s.teleport_to;
+            s.collision.tick(view, s.mapping, around, skater.position, ray, seconds_now());
+        }
+
         const bool arrived = have && in_game && (mc.flags & proto::kMcInWorld) && mc.teleportAck == s.teleport_seq;
         if (!arrived) return;
         if (!s.driving) start_driving(*g, s);
@@ -285,14 +298,6 @@ void tick(bool ready) noexcept {
             static std::string said;
             if (said != why) log_info("camera: " + (said = why));
         }
-
-        // skate.'s ground, as rays straight down through its physics world.
-        const RayFn ray = [](const Vec3& from, const Vec3& to) -> std::optional<Vec3> {
-            const auto ground = local_ground_height(from[0], from[2], from[1], to[1]);
-            if (!ground) return std::nullopt;
-            return Vec3{from[0], *ground, from[2]};
-        };
-        s.collision.tick(view, s.mapping, frame->feet, skater.position, ray, seconds_now());
 
         // The hidden skater walks along at a distance, so skate. keeps streaming the world in
         // (and its collision) where Minecraft's player is.

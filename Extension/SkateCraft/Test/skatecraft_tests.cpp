@@ -86,7 +86,7 @@ void link_state_and_input() {
     mine->seq = 2;
     check(link.read_mc_state(mc) && mc.x == 3 && mc.flags == proto::kMcInWorld, "Minecraft state read");
     reinterpret_cast<proto::Header*>(m.bytes)->mcHeartbeatMs = 4000;
-    check(link.minecraft_alive(5000) && !link.minecraft_alive(8000), "Minecraft's heartbeat times out after 3 s");
+    check(link.minecraft_alive(12000) && !link.minecraft_alive(15000), "Minecraft's heartbeat times out after 10 s");
 
     link.push_input(proto::kInKey, 26, 1);
     const auto* ring = m.bytes + proto::kOffInputRing;
@@ -148,11 +148,13 @@ void collision_flat_ground_and_step() {
     check(epoch == 9, "with its epoch");
     std::size_t tris = 0;
     bool region_after_tris = false;
+    std::map<int, bool> known; // region y -> sent as a region
     for (std::size_t i = 1; i < messages.size(); ++i) {
         const auto& msg = messages[i];
         proto::ColRegion header{};
         std::memcpy(&header, msg.payload.data(), sizeof(header));
-        check(header.epoch == 9 && header.minX == 0 && header.minZ == 0 && header.minY == 0 && header.maxY == 7, "region 0,0,0 of 8 blocks");
+        check(header.epoch == 9 && header.minX == 0 && header.minZ == 0 && header.maxY == header.minY + 7, "regions of column 0,0, 8 blocks high");
+        if (msg.type == proto::kColTris && header.minY != 0) check(header.count == 0, "nothing but air above and below the floor");
         if (msg.type == proto::kColTris) {
             check(msg.payload.size() == sizeof(header) + header.count * sizeof(proto::ColTri), "triangle message size");
             for (std::uint32_t k = 0; k < header.count; ++k) {
@@ -166,9 +168,13 @@ void collision_flat_ground_and_step() {
         } else if (msg.type == proto::kColRegion) {
             check(header.count == 0, "regions carry no voxel blocks");
             region_after_tris = messages[i - 1].type == proto::kColTris;
+            known[header.minY / 8] = true;
         }
     }
     check(tris == 32 * 32 * 2 && region_after_tris, "two triangles a cell, then the region");
+    // Feet at y 5: the rays ran from 8 down to -43, regions -6 to 1. Minecraft wants the regions
+    // at the feet, just above them and a region below known before it lets the player go.
+    check(known[0] && known[1] && known[-1] && known[-6] && known.size() == 8, "every region the rays passed is known, the air too");
     check(feed.columns_known() == 1, "one column known");
 }
 
