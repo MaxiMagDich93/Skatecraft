@@ -329,7 +329,8 @@ target_sources(dingosdk_runtime PRIVATE
     Extension/SkateCraft/collision_feed.cpp
     Extension/SkateCraft/input_map.cpp
     Extension/SkateCraft/player_drive.cpp
-    Extension/SkateCraft/overlay_feed.cpp)
+    Extension/SkateCraft/overlay_feed.cpp
+    Extension/SkateCraft/world_mesh.cpp)
 target_include_directories(dingosdk_runtime PRIVATE "${PROJECT_SOURCE_DIR}/External/skycraft_protocol")
 target_link_libraries(dingosdk_runtime PRIVATE dingosdk_lz4 dingosdk_zstd)
 

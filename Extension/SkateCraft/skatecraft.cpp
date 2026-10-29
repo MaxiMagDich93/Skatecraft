@@ -5,6 +5,7 @@
 #include "link.h"
 #include "overlay_feed.h"
 #include "player_drive.h"
+#include "world_mesh.h"
 #include "Engine/Core/Log/logging.h"
 #include "Extension/Plugins/plugin_game_runtime.h"
 #include "Extension/Plugins/plugin_ui.h"
@@ -101,6 +102,8 @@ void start_driving(plugins::Game& g, State& s) {
     if (const auto why = g.freeze(self, true); !why.empty()) log_info("holding the skater still: " + why);
     s.driving = true;
     s.edges.release_all();
+    world_mesh::set_mirror(s.mapping.mirror_x);
+    world_mesh::set_shown(true);
     notice("Minecraft has the player. F8 gives skate. the board back.");
 }
 
@@ -114,6 +117,8 @@ void stop_driving(plugins::Game& g, State& s, LinkView& link, bool put_skater_th
     s.edges.release_all();
     s.released = true;
     overlay_feed::clear();
+    world_mesh::set_shown(false);
+    world_mesh::set_selection(std::nullopt);
     // Skate on from where you walked to.
     if (put_skater_there && s.last_frame) {
         const auto feet = s.mapping.to_game(s.last_frame->feet);
@@ -124,6 +129,30 @@ void stop_driving(plugins::Game& g, State& s, LinkView& link, bool put_skater_th
         teleport_local_skater_heading(feet, static_cast<float>(std::atan2(fx, std::cos(yaw))));
     }
     s.driving = false;
+}
+
+// The characters a key types now, with Shift, Caps Lock and AltGr as they are (a German keyboard's
+// @ is AltGr+Q), or none (a dead key such as ^, or a key that types nothing).
+template<class IsDown>
+std::u32string typed(int vk, IsDown&& down) {
+    BYTE keys[256]{};
+    const auto set = [&](int key) { keys[key] = 0x80; };
+    if (down(VK_LSHIFT) || down(VK_RSHIFT)) set(VK_SHIFT), set(VK_LSHIFT);
+    if (down(VK_LCONTROL) || down(VK_RCONTROL)) set(VK_CONTROL), set(VK_LCONTROL);
+    if (down(VK_RMENU)) set(VK_MENU), set(VK_RMENU), set(VK_CONTROL), set(VK_LCONTROL); // AltGr is Ctrl+Alt to Windows
+    else if (down(VK_LMENU)) set(VK_MENU), set(VK_LMENU);
+    if (GetKeyState(VK_CAPITAL) & 1) keys[VK_CAPITAL] = 0x01;
+    const UINT scan = MapVirtualKeyW(static_cast<UINT>(vk), MAPVK_VK_TO_VSC);
+    wchar_t text[8]{};
+    // Flag 4: the keyboard's dead-key state is left as it is, so skate. typing elsewhere is not disturbed.
+    const int n = ToUnicodeEx(static_cast<UINT>(vk), scan, keys, text, 8, 4, GetKeyboardLayout(0));
+    std::u32string out;
+    for (int i = 0; i < n; ++i) {
+        char32_t c = text[i];
+        if (c >= 0xD800 && c <= 0xDBFF && i + 1 < n) c = 0x10000 + ((c - 0xD800) << 10) + (static_cast<char32_t>(text[++i]) - 0xDC00);
+        if (c >= 0x20 && c != 0x7F) out.push_back(c);
+    }
+    return out;
 }
 
 void forward_input(plugins::Game& g, State& s, LinkView& link, const proto::McState& mc, bool menu) {
@@ -139,16 +168,23 @@ void forward_input(plugins::Game& g, State& s, LinkView& link, const proto::McSt
         return;
     }
     s.released = false;
-    s.edges.poll([&](int vk) { return g.key_down(vk); }, dik_from_vk, toggle_dik, s.changes, s.swallow);
-    for (const auto& change : s.changes)
+    const bool screen = (mc.flags & proto::kMcScreenOpen) != 0;
+    const auto down = [&](int vk) { return g.key_down(vk); };
+    s.edges.poll(down, dik_from_vk, toggle_dik, screen, s.changes, s.swallow);
+    for (const auto& change : s.changes) {
         link.push_input(change.kind == InputEdge::mouse ? proto::kInMouseButton : proto::kInKey, change.code, change.down ? 1 : 0);
+        // In a Minecraft screen (chat, a sign, a book, the search box) a key also types what it
+        // says, with the keyboard's own layout, as Windows would turn it into a character.
+        if (screen && change.down && change.kind == InputEdge::key)
+            for (const char32_t c : typed(change.vk, down)) link.push_input(proto::kInText, 0, static_cast<std::int32_t>(c));
+    }
     g.game_keys(self, s.swallow);
     // O opens Minecraft's pause and options menu, Esc being skate.'s (as SkyCraft does with Skyrim).
-    const bool o = g.key_down('O');
+    // In a Minecraft screen both are Minecraft's own keys instead (input_map.h reserved_dik).
+    const bool o = !screen && g.key_down('O');
     if (o && !s.o_was_down) link.push_input(proto::kInOpenMenu, 0);
     s.o_was_down = o;
 
-    const bool screen = (mc.flags & proto::kMcScreenOpen) != 0;
     const auto display = plugin_ui::display();
     if (screen && !s.screen_was_open) {
         s.cursor_x = display[0] / 2;
@@ -169,10 +205,15 @@ void forward_input(plugins::Game& g, State& s, LinkView& link, const proto::McSt
 }
 
 void drain_minecraft(LinkView& link, bool driving) {
-    // Blocks, the player's body and other entities as Minecraft draws them (the render ring) are
-    // for the world renderer of phase 3 (README). Until then the ring is emptied so Minecraft never
-    // waits on it.
-    link.drain_render([](std::uint32_t, const std::uint8_t*, std::uint32_t) {}, 64ull << 20);
+    // Minecraft's block meshes and atlas (the render ring), kept for drawing them in skate.'s world
+    // (world_mesh.h). Taken while it is not shown too, so nothing built is missing when it is.
+    link.drain_render(world_mesh::receive, 64ull << 20);
+    LinkView::Selection selection;
+    if (driving && link.read_selection(selection))
+        world_mesh::set_selection(selection.has ? std::optional<world_mesh::Box>(world_mesh::Box{
+                                                      {selection.min[0], selection.min[1], selection.min[2]},
+                                                      {selection.max[0], selection.max[1], selection.max[2]}})
+                                                : std::nullopt);
     proto::McEvent event{};
     while (link.pop_event(event))
         if (event.type == proto::kEvPlayerDied) notice("Your Minecraft player died. Respawn in Minecraft (the overlay shows its screen).");
@@ -364,8 +405,9 @@ std::string status() {
         const bool alive = link.view().minecraft_alive(GetTickCount64());
         text += std::format("Minecraft {} (pid {}); ", alive ? "connected" : "not connected", link.view().minecraft_pid());
     }
-    text += std::format("driving {}; mirror_x {}; collision epoch {}, {} columns, {} rays", s.driving ? "yes" : "no", s.mapping.mirror_x ? 1 : 0,
-                        s.collision.epoch(), s.collision.columns_known(), s.collision.rays_cast());
+    text += std::format("driving {}; mirror_x {}; collision epoch {}, {} columns, {} rays; {} block sections", s.driving ? "yes" : "no",
+                        s.mapping.mirror_x ? 1 : 0, s.collision.epoch(), s.collision.columns_known(), s.collision.rays_cast(),
+                        world_mesh::section_count());
     if (s.last_frame)
         text += std::format("; Minecraft feet {:.2f} {:.2f} {:.2f}", s.last_frame->feet.x, s.last_frame->feet.y, s.last_frame->feet.z);
     return text;
@@ -375,6 +417,7 @@ std::string set_mirror_x(bool on) {
     auto& s = state();
     s.mapping.mirror_x = on;
     save_settings(s);
+    world_mesh::set_mirror(on);
     if (Link::get().valid()) s.collision.clear(Link::get().view(), ++s.epoch);
     s.arrive = true;
     return std::format("mirror_x {}: the player arrives again where the skater is.", on ? 1 : 0);

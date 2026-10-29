@@ -22,13 +22,15 @@ std::uint16_t sdl_mouse_button(int virtual_key);
 // Physical keys skate. and ReSkate keep while Minecraft drives the player, as SkyCraft keeps
 // Skyrim's: Esc (skate.'s pause menu), the console key left of 1, Insert (ReSkate's menu) and the
 // key that turns SkateCraft on and off. O opens Minecraft's own pause menu instead (InputBridge).
+// While a Minecraft screen is open (inventory, chat, a chest), Esc is Minecraft's: it closes it.
 inline constexpr std::uint32_t dik_escape = 0x01, dik_console = 0x29, dik_insert = 0xD2, dik_o = 0x18;
-bool reserved_dik(std::uint32_t dik, std::uint32_t toggle_dik);
+bool reserved_dik(std::uint32_t dik, std::uint32_t toggle_dik, bool minecraft_screen = false);
 
 struct InputEdge {
     enum Kind : std::uint8_t { key, mouse } kind{};
     std::uint16_t code{}; // SDL scancode or button
     bool down{};
+    int vk{};             // the virtual key it came from (for the character it types)
 };
 
 // Remembers which keys were down and reports what changed.
@@ -38,12 +40,14 @@ public:
     // with the changes since the last call, and `swallow` with the virtual keys skate. should not
     // see this frame (every forwarded key that is down).
     template<class IsDown, class ToDik>
-    void poll(IsDown&& down, ToDik&& to_dik, std::uint32_t toggle_dik, std::vector<InputEdge>& out, std::vector<std::uint8_t>& swallow) {
+    void poll(IsDown&& down, ToDik&& to_dik, std::uint32_t toggle_dik, bool minecraft_screen, std::vector<InputEdge>& out,
+              std::vector<std::uint8_t>& swallow) {
         out.clear();
         swallow.clear();
         // Several virtual keys can be one physical key (Num Lock turns the number pad's keys into
         // arrows), so what is down is gathered per SDL code before it is compared.
         std::array<bool, 256> keys{};
+        std::array<int, 256> key_vk{};
         std::array<bool, 8> buttons{};
         for (int vk = 1; vk < 256; ++vk) {
             // The generic Shift, Ctrl and Alt keys repeat their left and right versions.
@@ -52,19 +56,22 @@ public:
             std::uint16_t key = 0;
             if (!button) {
                 const std::uint32_t dik = to_dik(vk);
-                if (!dik || reserved_dik(dik, toggle_dik)) continue;
+                if (!dik || reserved_dik(dik, toggle_dik, minecraft_screen)) continue;
                 key = sdl_from_dik(dik);
                 if (!key) continue;
             }
             if (!down(vk)) continue;
             swallow.push_back(static_cast<std::uint8_t>(vk));
             if (button) buttons[button] = true;
-            else keys[key] = true;
+            else {
+                keys[key] = true;
+                key_vk[key] = vk;
+            }
         }
         for (std::size_t code = 1; code < keys.size(); ++code)
-            if (keys[code] != held_keys_[code]) out.push_back({InputEdge::key, static_cast<std::uint16_t>(code), held_keys_[code] = keys[code]});
+            if (keys[code] != held_keys_[code]) out.push_back({InputEdge::key, static_cast<std::uint16_t>(code), held_keys_[code] = keys[code], key_vk[code]});
         for (std::size_t code = 1; code < buttons.size(); ++code)
-            if (buttons[code] != held_buttons_[code]) out.push_back({InputEdge::mouse, static_cast<std::uint16_t>(code), held_buttons_[code] = buttons[code]});
+            if (buttons[code] != held_buttons_[code]) out.push_back({InputEdge::mouse, static_cast<std::uint16_t>(code), held_buttons_[code] = buttons[code], 0});
     }
     // Forgets what was held (SkateCraft turned off, the window lost focus, a menu opened); the
     // caller also sends Minecraft kInReleaseAll.

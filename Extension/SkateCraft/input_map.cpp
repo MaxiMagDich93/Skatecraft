@@ -62,7 +62,10 @@ std::uint16_t sdl_mouse_button(int vk) {
     }
 }
 
-bool reserved_dik(std::uint32_t dik, std::uint32_t toggle_dik) {
-    return dik == dik_escape || dik == dik_console || dik == dik_insert || dik == dik_o || dik == toggle_dik;
+bool reserved_dik(std::uint32_t dik, std::uint32_t toggle_dik, bool minecraft_screen) {
+    if (dik == dik_escape) return !minecraft_screen;
+    // O types an "o" in Minecraft's chat; only outside a screen does it open Minecraft's menu.
+    if (dik == dik_o) return !minecraft_screen;
+    return dik == dik_console || dik == dik_insert || dik == toggle_dik;
 }
 }

@@ -7,6 +7,7 @@
 #include "Extension/SkateCraft/link.h"
 #include "Extension/SkateCraft/overlay_feed.h"
 #include "Extension/SkateCraft/player_drive.h"
+#include "Extension/SkateCraft/world_mesh.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -228,7 +229,7 @@ void keys_and_buttons() {
     down[0x01] = true; // left mouse
     down[0x1B] = true; // Esc: skate.'s
     down[0x77] = true; // F8: SkateCraft's own switch
-    edges.poll(is_down, to_dik, 0x42, out, swallow);
+    edges.poll(is_down, to_dik, 0x42, false, out, swallow);
     check(out.size() == 2, "W and the left button change; Esc and F8 stay with skate.");
     bool w = false, click = false;
     for (const auto& e : out) {
@@ -237,11 +238,17 @@ void keys_and_buttons() {
     }
     check(w && click, "W is SDL 26, the left button is button 1");
     check(swallow.size() == 2, "skate. does not see W or the click");
-    edges.poll(is_down, to_dik, 0x42, out, swallow);
+    edges.poll(is_down, to_dik, 0x42, false, out, swallow);
     check(out.empty(), "held keys are not pressed again");
     down['W'] = false;
-    edges.poll(is_down, to_dik, 0x42, out, swallow);
+    edges.poll(is_down, to_dik, 0x42, false, out, swallow);
     check(out.size() == 1 && !out[0].down && out[0].code == 26, "and released once");
+    // In a Minecraft screen Esc closes it, so it goes to Minecraft; outside one it stays with skate.
+    edges.release_all();
+    down.clear();
+    down[0x1B] = true;
+    edges.poll(is_down, to_dik, 0x42, true, out, swallow);
+    check(out.size() == 1 && out[0].code == 41 && out[0].down && out[0].vk == 0x1B, "Esc reaches Minecraft's open screen, with its virtual key");
     check(sdl_from_dik(0x15) == 28 && sdl_from_dik(0x2C) == 29, "a German keyboard's Z and Y keys are the physical keys Minecraft expects");
 }
 
@@ -277,6 +284,41 @@ void overlay_premultiplied() {
     check(f.rgba[8] == 255 && f.rgba[9] == 128 && f.rgba[10] == 0 && f.rgba[11] == 128, "premultiplied colour divided by its alpha");
     check(!overlay_feed::take(f), "only once");
 }
+
+void blocks_from_minecraft() {
+    namespace wm = dingosdk::skatecraft::world_mesh;
+    wm::clear();
+    // An atlas of 2 x 1 pixels and a section with one solid and one glass triangle, as the ring carries them.
+    std::vector<std::uint8_t> atlas{2, 0, 0, 0, 1, 0, 0, 0, 255, 0, 0, 255, 0, 255, 0, 255};
+    wm::receive(proto::kRenAtlas, atlas.data(), static_cast<std::uint32_t>(atlas.size()));
+    proto::RenSection header{3, 4, -2, 6};
+    std::vector<std::uint8_t> section(sizeof header + 6 * sizeof(proto::RenVertex));
+    std::memcpy(section.data(), &header, sizeof header);
+    for (int k = 0; k < 6; ++k) {
+        proto::RenVertex v{};
+        v.x = static_cast<float>(k);
+        v.flags = k < 3 ? 1u : 2u; // cutout, then translucent
+        std::memcpy(section.data() + sizeof header + k * sizeof v, &v, sizeof v);
+    }
+    wm::receive(proto::kRenSection, section.data(), static_cast<std::uint32_t>(section.size()));
+    wm::set_shown(true);
+    auto scene = wm::snapshot();
+    check(scene.shown && scene.atlas && scene.atlas->width == 2 && scene.atlas->rgba[4] == 0 && scene.atlas->rgba[5] == 255, "the atlas is kept");
+    check(scene.sections && scene.sections->size() == 1, "one section");
+    const auto& got = *scene.sections->front();
+    check(got.sx == 3 && got.sy == 4 && got.sz == -2 && got.solid.size() == 3 && got.translucent.size() == 3, "solid and glass apart");
+    check(got.translucent[0].x == 3.0f, "the vertices as sent");
+    const auto before = scene.sections;
+    check(wm::snapshot().sections == before, "the same list while nothing changed");
+    // A section sent again with no vertices: its blocks were all broken.
+    proto::RenSection empty{3, 4, -2, 0};
+    wm::receive(proto::kRenSection, reinterpret_cast<const std::uint8_t*>(&empty), sizeof empty);
+    check(wm::snapshot().sections->empty() && wm::section_count() == 0, "an empty section is gone");
+    // A message cut short is ignored rather than read past its end.
+    wm::receive(proto::kRenSection, section.data(), 40);
+    check(wm::section_count() == 0, "a short section is ignored");
+    wm::set_shown(false);
+}
 }
 
 int main() {
@@ -285,7 +327,7 @@ int main() {
         {"coordinates", coordinates},             {"collision: flat ground and a kerb", collision_flat_ground_and_step},
         {"collision: the skater skipped", collision_skips_the_skater}, {"triangles across regions", triangles_span_regions},
         {"keys and buttons", keys_and_buttons},   {"player between ticks", player_between_ticks},
-        {"overlay alpha", overlay_premultiplied}};
+        {"overlay alpha", overlay_premultiplied}, {"blocks from Minecraft", blocks_from_minecraft}};
     int failed = 0;
     for (const auto& [name, test] : tests) {
         try {

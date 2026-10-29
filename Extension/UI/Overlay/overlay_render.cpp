@@ -8,6 +8,7 @@
 #include "screen_look.h"
 #include "viewmodel.h"
 #include "Extension/SkateCraft/overlay_feed.h"
+#include "minecraft_world.h"
 #include "park_previews.h"
 #include "chat_emotes.h"
 #include "input_capture.h"
@@ -106,6 +107,7 @@ void destroy_graphics() {
     store_icons_lost();
     screen_look::release();
     viewmodel::release();
+    minecraft_world::release();
     s.commands.Reset(); s.rtvs.Reset(); s.srvs.Reset(); s.fence.Reset(); s.device.Reset();
     if (s.fence_event) CloseHandle(s.fence_event);
     s.fence_event = nullptr;
@@ -316,7 +318,7 @@ bool setup_graphics() {
     // ImGui's atlas, the map download card's icon, the menu's map pictures, an item's mod icon,
     // plugins' pictures (upload_image), the screen look's, the Mod Manager's icons, a viewmodel's pictures
     // and SkateCraft's picture of Minecraft's screen
-    heap.NumDescriptors = minecraft_overlay_slot + 1;
+    heap.NumDescriptors = minecraft_atlas_slot + 1;
     heap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     graphics_result = s.device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&s.srvs));
     if (FAILED(graphics_result)) {
@@ -932,7 +934,7 @@ void render(IDXGISwapChain* presented, UINT flags) {
         // Hidden, the overlay still draws while a notice or chat line is on screen.
         if (s.loaded_notice_posted && !notices_pending() && !chat_frame && !game_text_frame && !skate_hud_frame &&
             !nametag_frame && !plugins_frame && !item_browser_frame && !perf_frame && !hub_frame && !map_download_frame && !mod_apply_frame && !look_frame &&
-            !viewmodel_frame && !grab_frame && !skatecraft::overlay_feed::shown()) return;
+            !viewmodel_frame && !grab_frame && !skatecraft::overlay_feed::shown() && !minecraft_world::pending()) return;
     } else if (!s.ui_was_interactive) {
         s.ui_was_interactive = true;
         s.last_model = {}; // Reopening immediately reads fresh state.
@@ -988,7 +990,7 @@ void render(IDXGISwapChain* presented, UINT flags) {
     fit_display_to_buffer(s, frame.buffer.Get());
     ImGui::NewFrame();
     // SkateCraft's picture of Minecraft's screen, under everything ReSkate draws.
-    const bool minecraft_frame = skatecraft::overlay_feed::shown();
+    const bool minecraft_frame = skatecraft::overlay_feed::shown() || minecraft_world::pending();
     if (minecraft_frame && s.minecraft_id) ImGui::GetBackgroundDrawList()->AddImage(s.minecraft_id, ImVec2(0, 0), ImGui::GetIO().DisplaySize);
     if (menu_frame) {
         draw_menu();
@@ -1033,6 +1035,28 @@ void render(IDXGISwapChain* presented, UINT flags) {
     upload_plugin_image(s);
     upload_store_icon(s);
     upload_minecraft_overlay(s);
+    if (minecraft_world::pending()) {
+        // SkateCraft's blocks in the world: under the viewmodel, the screen look and ImGui (Minecraft's
+        // hand and HUD come with ImGui's draws). Left in PRESENT, as found.
+        ID3D12DescriptorHeap* world_heaps[] = {s.srvs.Get()};
+        s.commands->SetDescriptorHeaps(1, world_heaps);
+        minecraft_world::Target world;
+        world.device = s.device.Get();
+        world.commands = s.commands.Get();
+        world.buffer = frame.buffer.Get();
+        world.rtv = frame.rtv;
+        world.srvs = s.srvs.Get();
+        world.slot = minecraft_atlas_slot;
+        world.format = frame.buffer->GetDesc().Format;
+        world.transfer = output_transfer;
+        world.white_nits = output_white_nits;
+        world.fence = s.next_fence + 1; // what this frame's commands signal (below)
+        world.gpu_done = [] {
+            const auto& fence = state().fence;
+            return fence ? fence->GetCompletedValue() : std::uint64_t{0};
+        };
+        (void)minecraft_world::record(world);
+    }
     if (viewmodel_frame) {
         // Under the screen look (a camcorder films the gun too) and ImGui. Left in PRESENT, as found.
         ID3D12DescriptorHeap* viewmodel_heaps[] = {s.srvs.Get()};

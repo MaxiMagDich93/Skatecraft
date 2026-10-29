@@ -87,6 +87,29 @@ bool LinkView::read_mc_state(proto::McState& out) const {
     return false;
 }
 
+bool LinkView::read_selection(Selection& out) const {
+    if (!base_) return false;
+    auto* src = at<proto::WorldEntities>(proto::kOffWorldEntities);
+    auto seq = atomic(src->seq);
+    for (int attempt = 0; attempt < 16; ++attempt) {
+        const auto s1 = seq.load(std::memory_order_acquire);
+        if (s1 & 1) {
+            _mm_pause();
+            continue;
+        }
+        Selection copy;
+        copy.has = src->hasSelection != 0;
+        std::memcpy(copy.min, src->selMin, sizeof copy.min);
+        std::memcpy(copy.max, src->selMax, sizeof copy.max);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (seq.load(std::memory_order_relaxed) == s1) {
+            out = copy;
+            return true;
+        }
+    }
+    return false;
+}
+
 void LinkView::push_input(proto::InputType type, std::uint16_t code, std::int32_t a, std::int32_t b, std::int32_t c) {
     if (!base_) return;
     auto* ring = base_ + proto::kOffInputRing;

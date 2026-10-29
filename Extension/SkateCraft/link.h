@@ -45,6 +45,13 @@ public:
     [[nodiscard]] std::uint64_t collision_room() const;
     // Event ring (consumer). False when empty.
     bool pop_event(proto::McEvent& out);
+    // The block Minecraft's crosshair is on (WorldEntities' outline, seqlock): its box in Minecraft
+    // coordinates, or nothing. False when no steady copy could be had.
+    struct Selection {
+        bool has{};
+        float min[3]{}, max[3]{};
+    };
+    bool read_selection(Selection& out) const;
     // Render ring (consumer): fn(type, payload, bytes) for each waiting message, about max_bytes.
     void drain_render(const std::function<void(std::uint32_t, const std::uint8_t*, std::uint32_t)>& fn, std::uint64_t max_bytes);
     // Overlay triple buffer (consumer): true when a newer frame became the front slot.

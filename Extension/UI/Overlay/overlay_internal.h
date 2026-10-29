@@ -376,6 +376,8 @@ ImTextureID store_icon(const std::string& url);
 inline constexpr UINT viewmodel_first_slot = store_icon_first_slot + store_icon_slots, viewmodel_slots = 24;
 // Then SkateCraft's picture of Minecraft's screen (upload_minecraft_overlay).
 inline constexpr UINT minecraft_overlay_slot = viewmodel_first_slot + viewmodel_slots;
+// And SkateCraft's block atlas, for its blocks in the world (minecraft_world.h).
+inline constexpr UINT minecraft_atlas_slot = minecraft_overlay_slot + 1;
 struct StoreIconUpload {
     std::string url;
     int slot{};
