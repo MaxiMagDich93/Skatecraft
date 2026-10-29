@@ -116,6 +116,34 @@ std::uint32_t world_id(const std::string& map) {
 
 plugins::Game* game() { return plugins::existing_game(); }
 
+// Minecraft as SkateCraft's installer sets it up: Prism Launcher with the "SkateCraft" instance in
+// %LOCALAPPDATA%\SkateCraft. Started once a run, when F8 finds no Minecraft yet (SkyCraft's plugin
+// starts its Minecraft the same way). False when it is not installed there or does not start.
+bool start_minecraft() {
+    static bool tried = false;
+    if (tried) return false;
+    tried = true;
+    wchar_t local[MAX_PATH]{};
+    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
+    if (!length || length >= MAX_PATH) return false;
+    const auto prism = std::filesystem::path(local) / L"SkateCraft" / L"Prism" / L"prismlauncher.exe";
+    std::error_code e;
+    if (!std::filesystem::exists(prism, e)) return false;
+    std::wstring command = L"\"" + prism.wstring() + L"\" --launch SkateCraft";
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    const auto folder = prism.parent_path().wstring();
+    if (!CreateProcessW(prism.c_str(), command.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr, folder.c_str(), &startup, &process)) {
+        log_info(std::format("could not start Minecraft (Windows error {})", GetLastError()));
+        return false;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    log_info("started Minecraft: Prism Launcher --launch SkateCraft");
+    return true;
+}
+
 // ---- driving: the skater hidden and still, the camera and keys Minecraft's ------------------------
 void start_driving(plugins::Game& g, State& s) {
     if (const auto why = g.hide_skater(self, true); !why.empty()) log_info("hiding the skater: " + why);
@@ -342,7 +370,8 @@ void tick(bool ready, bool noclip) noexcept {
                 notice("Minecraft stopped answering; skate. has the player again.", true);
             }
             if (!s.waiting_told) {
-                notice("Waiting for Minecraft. Start it with SkyCraft's mod and -Dskycraft.link=SkateCraft_v1 (README, phase 1).");
+                notice(start_minecraft() ? "Starting Minecraft (the first time it takes a minute, and Prism asks you to sign in)."
+                                         : "Waiting for Minecraft. Start it with \"Minecraft starten\" (SkateCraft's installer puts it in the Start menu).");
                 s.waiting_told = true;
             }
             s.drive.forget();
