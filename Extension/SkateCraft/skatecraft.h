@@ -18,8 +18,9 @@
 namespace dingosdk::skatecraft {
 // Each client tick, after the plugins' tick (Runtime/client_tick.cpp). `ready`: a level is playing
 // (the client's named context is ready and no level request is loading). Not ready reaches
-// Minecraft as a loading screen.
-void tick(bool ready) noexcept;
+// Minecraft as a loading screen. `noclip`: the skater is held in noclip now (the debug model's), which
+// is how it stays still while Minecraft has the player.
+void tick(bool ready, bool noclip) noexcept;
 
 // For the console (console_commands.cpp).
 std::string set_enabled(bool on);

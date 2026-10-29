@@ -56,6 +56,10 @@ struct State {
     bool screen_was_open{};
     double skater_moved_at{-100};
     bool arrived_before{}; // Minecraft had acknowledged the current teleport last tick
+    // The skater is held still by noclip with no input (plugin_game_runtime freeze). Noclip starts only
+    // with the game's own camera, so the camera waits for it, asking again now and then.
+    double driving_since{}, freeze_asked_at{};
+    std::uint32_t mc_flags{}; // Minecraft's last state flags
     std::optional<PlayerFrame> last_frame;
 };
 State& state() {
@@ -101,6 +105,7 @@ void start_driving(plugins::Game& g, State& s) {
     if (const auto why = g.hide_skater(self, true); !why.empty()) log_info("hiding the skater: " + why);
     if (const auto why = g.freeze(self, true); !why.empty()) log_info("holding the skater still: " + why);
     s.driving = true;
+    s.driving_since = s.freeze_asked_at = seconds_now();
     s.edges.release_all();
     world_mesh::set_mirror(s.mapping.mirror_x);
     world_mesh::set_shown(true);
@@ -109,6 +114,12 @@ void start_driving(plugins::Game& g, State& s) {
 
 void stop_driving(plugins::Game& g, State& s, LinkView& link, bool put_skater_there) {
     if (!s.driving) return;
+    // A Minecraft screen left open (the chat, the inventory) would still be open when Minecraft has
+    // the player again, and take every key: Esc closes it.
+    if (s.mc_flags & proto::kMcScreenOpen) {
+        link.push_input(proto::kInKey, 41, 1);
+        link.push_input(proto::kInKey, 41, 0);
+    }
     g.release_camera(self);
     g.game_keys(self, {});
     g.hide_skater(self, false);
@@ -227,7 +238,7 @@ void drain_minecraft(LinkView& link, bool driving) {
 }
 }
 
-void tick(bool ready) noexcept {
+void tick(bool ready, bool noclip) noexcept {
     try {
         auto& s = state();
         auto* g = game();
@@ -278,6 +289,7 @@ void tick(bool ready) noexcept {
             s.arrive = true;
         } else {
             s.waiting_told = false;
+            s.mc_flags = mc.flags;
             s.drive.observe(mc);
             drain_minecraft(view, s.driving);
         }
@@ -351,6 +363,21 @@ void tick(bool ready) noexcept {
         if (!frame) return;
         s.last_frame = frame;
 
+        // The skater must be in noclip before the camera is taken: noclip will not start without the
+        // game's own camera, and a skater left out of it rolls off with the keys skate. still reads.
+        // After a few seconds without it (a host that forbids noclip) the camera is taken anyway.
+        if (!noclip) {
+            const double now_s = seconds_now();
+            if (now_s - s.driving_since < 4) {
+                if (now_s - s.freeze_asked_at > 1) {
+                    g->freeze(self, false);
+                    if (const auto why = g->freeze(self, true); !why.empty()) log_info("holding the skater still: " + why);
+                    s.freeze_asked_at = now_s;
+                }
+                g->release_camera(self);
+                return;
+            }
+        }
         const auto camera = PlayerDrive::camera(*frame, s.look, s.mapping);
         if (const auto why = g->set_camera(self, camera.pose, std::clamp(camera.fov, 10.0f, 150.0f)); !why.empty()) {
             static std::string said;

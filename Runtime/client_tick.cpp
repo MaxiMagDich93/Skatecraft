@@ -1171,7 +1171,7 @@ void update_model(std::uintptr_t client, TickState& frame) {
     {
         DINGO_PROFILE_ZONE("tick/skatecraft");
         // After the plugins: SkateCraft borrows the game they use, and holds the camera after theirs.
-        dingosdk::skatecraft::tick(named_context_ready && !debug_busy);
+        dingosdk::skatecraft::tick(named_context_ready && !debug_busy, r.debug_model.noclip);
     }
     if (!has_request && now < r.next_model && state == r.previous_state) return;
     r.next_model = now + 500;
