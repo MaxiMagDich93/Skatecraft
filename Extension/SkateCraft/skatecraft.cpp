@@ -59,9 +59,11 @@ struct State {
     bool screen_was_open{};
     double skater_moved_at{-100};
     bool arrived_before{}; // Minecraft had acknowledged the current teleport last tick
-    // The skater is held still by noclip with no input (plugin_game_runtime freeze). Noclip starts only
-    // with the game's own camera, so the camera waits for it, asking again now and then.
-    double driving_since{}, freeze_asked_at{};
+    // The hidden skater is held where it was put (skater_hold) by moving it back when it drifts. Not
+    // noclip: noclip needs the game's own camera, and while it is on the camera cannot be taken
+    // ("Exit Freecam or Noclip"), so the view would stay where the skater is.
+    std::optional<Vec3> skater_hold;
+    bool noclip_told{};
     std::uint32_t mc_flags{}, mc_ack{}; // Minecraft's last state flags and the teleport it acknowledged
     bool last_menu{}, last_noclip{}, last_in_game{}; // for `skatecraft status`
     std::uint64_t keys_sent{}, buttons_sent{}, ticks_seen{};
@@ -117,11 +119,10 @@ plugins::Game* game() { return plugins::existing_game(); }
 // ---- driving: the skater hidden and still, the camera and keys Minecraft's ------------------------
 void start_driving(plugins::Game& g, State& s) {
     if (const auto why = g.hide_skater(self, true); !why.empty()) log_info("hiding the skater: " + why);
-    if (const auto why = g.freeze(self, true); !why.empty()) log_info("holding the skater still: " + why);
     // The board too, which the hidden skater still carries or stands on (bones 2 to 15: all its parts).
     for (int bone = 2; bone <= 15; ++bone) g.board_hide(self, bone, false);
     s.driving = true;
-    s.driving_since = s.freeze_asked_at = seconds_now();
+    s.skater_hold = trainer::telemetry().position;
     s.edges.release_all();
     world_mesh::set_mirror(s.mapping.mirror_x);
     world_mesh::set_shown(true);
@@ -140,7 +141,8 @@ void stop_driving(plugins::Game& g, State& s, LinkView& link, bool put_skater_th
     g.game_keys(self, {});
     g.hide_skater(self, false);
     g.board_clear(self, -1);
-    g.freeze(self, false);
+    g.freeze(self, false); // nothing to undo now; a build of SkateCraft before fix 10 asked for it
+    s.skater_hold.reset();
     link.push_input(proto::kInReleaseAll, 0);
     s.edges.release_all();
     s.released = true;
@@ -430,21 +432,11 @@ void tick(bool ready, bool noclip) noexcept {
         if (!frame) return;
         s.last_frame = frame;
 
-        // The skater must be in noclip before the camera is taken: noclip will not start without the
-        // game's own camera, and a skater left out of it rolls off with the keys skate. still reads.
-        // After a few seconds without it (a host that forbids noclip) the camera is taken anyway.
-        if (!noclip) {
-            const double now_s = seconds_now();
-            if (now_s - s.driving_since < 4) {
-                if (now_s - s.freeze_asked_at > 1) {
-                    g->freeze(self, false);
-                    if (const auto why = g->freeze(self, true); !why.empty()) log_info("holding the skater still: " + why);
-                    s.freeze_asked_at = now_s;
-                }
-                g->release_camera(self);
-                return;
-            }
+        if (noclip && !s.noclip_told) {
+            notice("Noclip is on, so the camera stays with the skater: turn noclip off (ReSkate menu) to see Minecraft's player.", true);
+            s.noclip_told = true;
         }
+        if (!noclip) s.noclip_told = false;
         const auto camera = PlayerDrive::camera(*frame, s.look, s.mapping);
         if (const auto why = g->set_camera(self, camera.pose, std::clamp(camera.fov, 10.0f, 150.0f)); !why.empty()) {
             static std::string said;
@@ -462,6 +454,14 @@ void tick(bool ready, bool noclip) noexcept {
             !local_skater_teleport_pending()) {
             teleport_local_skater_heading(feet, skater.heading * std::numbers::pi_v<float> / 180);
             s.skater_moved_at = seconds_now();
+            s.skater_hold = feet;
+        } else if (s.skater_hold && !local_skater_teleport_pending() && seconds_now() - s.skater_moved_at > 1) {
+            // Rolling or sliding away on its own (no keys reach it): back to where it is held.
+            const auto& hold = *s.skater_hold;
+            if (std::hypot(skater.position[0] - hold[0], skater.position[2] - hold[2]) > 2 || std::abs(skater.position[1] - hold[1]) > 3) {
+                teleport_local_skater_heading(hold, skater.heading * std::numbers::pi_v<float> / 180);
+                s.skater_moved_at = seconds_now();
+            }
         }
     } catch (...) {
         logging::write(logging::Level::error, logging::Channel::runtime, "SkateCraft: tick failed");
@@ -527,6 +527,10 @@ std::string status() {
     text += std::format("; teleport {}/{}; Minecraft flags 0x{:x}{}; menu {}; in game {}; noclip {}", s.mc_ack, s.teleport_seq, s.mc_flags,
                         (s.mc_flags & proto::kMcScreenOpen) ? " (a screen is open)" : "", s.last_menu ? 1 : 0, s.last_in_game ? 1 : 0,
                         s.last_noclip ? 1 : 0);
+    if (auto* g = game(); g && s.driving) {
+        const auto camera = g->camera_status(self);
+        text += "; camera " + (camera.empty() ? std::string("ours") : camera);
+    }
     return text;
 }
 
