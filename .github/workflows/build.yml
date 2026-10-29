@@ -29,13 +29,26 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
           Write-Host "SkateCraft $v"
 
+      # A failing step's last lines also go out as an error annotation, readable without the full log.
       - name: Configure
         shell: pwsh
-        run: cmake --preset vs2022-x64 -DDINGOSDK_BUILD_SKATECRAFT_TESTS=ON
+        run: |
+          cmake --preset vs2022-x64 -DDINGOSDK_BUILD_SKATECRAFT_TESTS=ON 2>&1 | Tee-Object -FilePath configure.log
+          if ($LASTEXITCODE) {
+            $tail = (Get-Content configure.log | Select-Object -Last 40) -join '%0A'
+            Write-Host "::error title=Configure failed::$tail"
+            exit 1
+          }
 
       - name: Build ReSkate.dll, ReSkateLauncher.exe and the tests
         shell: pwsh
-        run: cmake --build build/vs2022-x64 --config Release --parallel 4 --target dingosdk_runtime dingosdk_launcher dingosdk_skatecraft_tests
+        run: |
+          cmake --build build/vs2022-x64 --config Release --parallel 4 --target dingosdk_runtime dingosdk_launcher dingosdk_skatecraft_tests 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE) {
+            $errors = (Get-Content build.log | Select-String -Pattern 'error|Error' | Select-Object -First 40 | ForEach-Object { $_.Line.Trim() }) -join '%0A'
+            Write-Host "::error title=Build failed::$errors"
+            exit 1
+          }
 
       - name: SkateCraft tests
         shell: pwsh
