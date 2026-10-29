@@ -708,7 +708,8 @@ void upload_minecraft_overlay(State& s) {
         s.minecraft_id = {};
         return;
     }
-    if (s.minecraft_fence && !completed(s.minecraft_fence, 0)) return;
+    // Still copying the last one: this frame keeps showing it (no wait, and no event left set).
+    if (s.minecraft_fence && (!s.fence || s.fence->GetCompletedValue() < s.minecraft_fence)) return;
     static skatecraft::overlay_feed::Frame pixels; // its buffer is reused frame after frame
     if (!skatecraft::overlay_feed::take(pixels)) return;
     const bool remake = !s.minecraft_texture || s.minecraft_width != pixels.width || s.minecraft_height != pixels.height;
@@ -931,7 +932,7 @@ void render(IDXGISwapChain* presented, UINT flags) {
         // Hidden, the overlay still draws while a notice or chat line is on screen.
         if (s.loaded_notice_posted && !notices_pending() && !chat_frame && !game_text_frame && !skate_hud_frame &&
             !nametag_frame && !plugins_frame && !item_browser_frame && !perf_frame && !hub_frame && !map_download_frame && !mod_apply_frame && !look_frame &&
-            !viewmodel_frame && !grab_frame) return;
+            !viewmodel_frame && !grab_frame && !skatecraft::overlay_feed::shown()) return;
     } else if (!s.ui_was_interactive) {
         s.ui_was_interactive = true;
         s.last_model = {}; // Reopening immediately reads fresh state.
