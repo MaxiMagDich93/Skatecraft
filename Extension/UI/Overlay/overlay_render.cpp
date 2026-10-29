@@ -7,6 +7,7 @@
 #include "plugin_overlay.h"
 #include "screen_look.h"
 #include "viewmodel.h"
+#include "Extension/SkateCraft/overlay_feed.h"
 #include "park_previews.h"
 #include "chat_emotes.h"
 #include "input_capture.h"
@@ -86,6 +87,12 @@ void destroy_graphics() {
     s.frames.clear();
     s.card_texture.Reset(); s.card_upload.Reset();
     card_image_lost();
+    if (s.minecraft_upload && s.minecraft_mapped) s.minecraft_upload->Unmap(0, nullptr);
+    s.minecraft_texture.Reset(); s.minecraft_upload.Reset();
+    s.minecraft_mapped = nullptr;
+    s.minecraft_width = s.minecraft_height = 0;
+    s.minecraft_id = {};
+    s.minecraft_fence = 0;
     s.menu_map_texture.Reset(); s.menu_map_upload.Reset();
     menu_map_pixels_lost();
     s.mod_icon_texture.Reset(); s.mod_icon_upload.Reset();
@@ -307,8 +314,9 @@ bool setup_graphics() {
     }
     heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     // ImGui's atlas, the map download card's icon, the menu's map pictures, an item's mod icon,
-    // plugins' pictures (upload_image), the screen look's, the Mod Manager's icons and a viewmodel's pictures
-    heap.NumDescriptors = viewmodel_first_slot + viewmodel_slots;
+    // plugins' pictures (upload_image), the screen look's, the Mod Manager's icons, a viewmodel's pictures
+    // and SkateCraft's picture of Minecraft's screen
+    heap.NumDescriptors = minecraft_overlay_slot + 1;
     heap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     graphics_result = s.device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&s.srvs));
     if (FAILED(graphics_result)) {
@@ -690,6 +698,109 @@ ImTextureID upload_image(State& s, const CardPixels& pixels, UINT slot, ComPtr<I
     return static_cast<ImTextureID>(gpu.ptr);
 }
 
+// SkateCraft's picture of Minecraft's screen: the hotbar, the hand, the inventory and every other
+// Minecraft screen (Extension/SkateCraft/overlay_feed.h). The newest frame goes into one texture,
+// made again only when its size changes, through one upload buffer that stays mapped. While the GPU
+// may still be copying the last frame this one waits, which only means the picture is a frame older.
+void upload_minecraft_overlay(State& s) {
+    if (!s.device || !s.srvs || !s.commands) return;
+    if (!skatecraft::overlay_feed::shown()) {
+        s.minecraft_id = {};
+        return;
+    }
+    if (s.minecraft_fence && !completed(s.minecraft_fence, 0)) return;
+    static skatecraft::overlay_feed::Frame pixels; // its buffer is reused frame after frame
+    if (!skatecraft::overlay_feed::take(pixels)) return;
+    const bool remake = !s.minecraft_texture || s.minecraft_width != pixels.width || s.minecraft_height != pixels.height;
+    if (remake) {
+        // Frames still on the GPU may draw the texture this one replaces.
+        if (s.minecraft_texture && s.next_fence && !completed(s.next_fence, render_fence_timeout_ms)) return;
+        s.minecraft_id = {};
+        if (s.minecraft_upload && s.minecraft_mapped) s.minecraft_upload->Unmap(0, nullptr);
+        s.minecraft_texture.Reset();
+        s.minecraft_upload.Reset();
+        s.minecraft_mapped = nullptr;
+        s.minecraft_width = s.minecraft_height = 0;
+        D3D12_RESOURCE_DESC texture{};
+        texture.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        texture.Width = pixels.width;
+        texture.Height = pixels.height;
+        texture.DepthOrArraySize = 1;
+        texture.MipLevels = 1;
+        texture.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        texture.SampleDesc.Count = 1;
+        UINT rows{};
+        UINT64 row_bytes{}, total{};
+        s.device->GetCopyableFootprints(&texture, 0, 1, 0, &s.minecraft_layout, &rows, &row_bytes, &total);
+        D3D12_RESOURCE_DESC buffer{};
+        buffer.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        buffer.Width = total;
+        buffer.Height = 1;
+        buffer.DepthOrArraySize = 1;
+        buffer.MipLevels = 1;
+        buffer.SampleDesc.Count = 1;
+        buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        D3D12_HEAP_PROPERTIES heap{}, upload_heap{};
+        heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+        upload_heap.Type = D3D12_HEAP_TYPE_UPLOAD;
+        const D3D12_RANGE none{};
+        if (!total || rows != pixels.height || row_bytes < std::uint64_t{pixels.width} * 4 ||
+            FAILED(s.device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &texture, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                     IID_PPV_ARGS(&s.minecraft_texture))) ||
+            FAILED(s.device->CreateCommittedResource(&upload_heap, D3D12_HEAP_FLAG_NONE, &buffer, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                     IID_PPV_ARGS(&s.minecraft_upload))) ||
+            FAILED(s.minecraft_upload->Map(0, &none, &s.minecraft_mapped)) || !s.minecraft_mapped) {
+            s.minecraft_texture.Reset();
+            s.minecraft_upload.Reset();
+            s.minecraft_mapped = nullptr;
+            return;
+        }
+        s.minecraft_width = pixels.width;
+        s.minecraft_height = pixels.height;
+    } else {
+        D3D12_RESOURCE_BARRIER writable{};
+        writable.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        writable.Transition.pResource = s.minecraft_texture.Get();
+        writable.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        writable.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        writable.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+        s.commands->ResourceBarrier(1, &writable);
+    }
+    for (UINT row = 0; row < pixels.height; ++row)
+        std::memcpy(static_cast<unsigned char*>(s.minecraft_mapped) + s.minecraft_layout.Offset + std::size_t{row} * s.minecraft_layout.Footprint.RowPitch,
+                    pixels.rgba.data() + std::size_t{row} * pixels.width * 4, std::size_t{pixels.width} * 4);
+    D3D12_TEXTURE_COPY_LOCATION to{}, from{};
+    to.pResource = s.minecraft_texture.Get();
+    to.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    from.pResource = s.minecraft_upload.Get();
+    from.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    from.PlacedFootprint = s.minecraft_layout;
+    s.commands->CopyTextureRegion(&to, 0, 0, 0, &from, nullptr);
+    D3D12_RESOURCE_BARRIER readable{};
+    readable.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    readable.Transition.pResource = s.minecraft_texture.Get();
+    readable.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    readable.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    readable.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    s.commands->ResourceBarrier(1, &readable);
+    s.minecraft_fence = s.next_fence + 1; // what this frame's commands signal
+    if (remake) {
+        const auto step = s.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        auto cpu = s.srvs->GetCPUDescriptorHandleForHeapStart();
+        auto gpu = s.srvs->GetGPUDescriptorHandleForHeapStart();
+        cpu.ptr += std::size_t{step} * minecraft_overlay_slot;
+        gpu.ptr += std::uint64_t{step} * minecraft_overlay_slot;
+        D3D12_SHADER_RESOURCE_VIEW_DESC view{};
+        view.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        view.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        view.Texture2D.MipLevels = 1;
+        s.device->CreateShaderResourceView(s.minecraft_texture.Get(), &view, cpu);
+        // Drawable from the next frame on: this frame's draws were made before the copy was recorded.
+        s.minecraft_id = static_cast<ImTextureID>(gpu.ptr);
+    }
+}
+
 void upload_card_image(State& s) {
     CardPixels pixels;
     if (!take_card_pixels(pixels) || pixels.rgba.empty() || !s.device || !s.srvs) return;
@@ -875,6 +986,9 @@ void render(IDXGISwapChain* presented, UINT flags) {
     update_menu_pointer();
     fit_display_to_buffer(s, frame.buffer.Get());
     ImGui::NewFrame();
+    // SkateCraft's picture of Minecraft's screen, under everything ReSkate draws.
+    const bool minecraft_frame = skatecraft::overlay_feed::shown();
+    if (minecraft_frame && s.minecraft_id) ImGui::GetBackgroundDrawList()->AddImage(s.minecraft_id, ImVec2(0, 0), ImGui::GetIO().DisplaySize);
     if (menu_frame) {
         draw_menu();
         draw_plugin_screen();
@@ -896,7 +1010,7 @@ void render(IDXGISwapChain* presented, UINT flags) {
     draw_map_download();
     sync_menu_cursor(); // close buttons also change visibility, without a key message
     ImGui::Render();
-    if (ImGui::GetDrawData()->TotalVtxCount == 0 && !look_frame && !viewmodel_frame) { ImGui::SetCurrentContext(previous); return; }
+    if (ImGui::GetDrawData()->TotalVtxCount == 0 && !look_frame && !viewmodel_frame && !minecraft_frame) { ImGui::SetCurrentContext(previous); return; }
     const auto upload_slot = static_cast<std::size_t>(s.submitted_draws % s.upload_fences.size());
     // The ImGui backend rotates upload buffers by submitted draw count, while
     // command allocators rotate by swapchain index. Wait for both exact owners
@@ -917,6 +1031,7 @@ void render(IDXGISwapChain* presented, UINT flags) {
     upload_mod_icon(s);
     upload_plugin_image(s);
     upload_store_icon(s);
+    upload_minecraft_overlay(s);
     if (viewmodel_frame) {
         // Under the screen look (a camcorder films the gun too) and ImGui. Left in PRESENT, as found.
         ID3D12DescriptorHeap* viewmodel_heaps[] = {s.srvs.Get()};

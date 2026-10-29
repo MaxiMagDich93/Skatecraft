@@ -14,6 +14,7 @@
 | Zstandard | `1.5.7` | BSD-3-Clause (dual-licensed with GPLv2; used under BSD) | [facebook/zstd](https://github.com/facebook/zstd/releases/tag/v1.5.7) |
 | Montserrat font | `fonts/Montserrat-*.ttf` | SIL Open Font License 1.1 | [JulietaUla/Montserrat](https://github.com/JulietaUla/Montserrat) |
 | Permanent Marker font | `fonts/PermanentMarker-Regular.ttf` | Apache 2.0 | [Google Fonts](https://fonts.google.com/specimen/Permanent+Marker) |
+| SkyCraft protocol header (SkateCraft) | `bfcaf178524b92c2cdeb88e4ce0f13ef9ded6f32` | MIT | [chasmlol/SkyCraft](https://github.com/chasmlol/SkyCraft/tree/bfcaf178524b92c2cdeb88e4ce0f13ef9ded6f32/protocol) |
 
 `manifest.json` records the upstream SHA-256 for every vendored file, with declared
 local patch hashes where applicable. Detours and RapidJSON came from pinned GitHub

@@ -8,6 +8,9 @@
 // Binds page are kept in `storage`/binds.json.
 namespace dingosdk::plugins {
 Game& real_game(std::uintptr_t image_base, const std::filesystem::path& storage);
+// The game the plugin host made, without changing its storage; null until the host has made it.
+// SkateCraft (Extension/SkateCraft) asks the game for things through it, as a plugin would.
+Game* existing_game() noexcept;
 // The client tick's camera phase, after Spectate's: shows the plugin camera, or gives it back.
 void apply_plugin_camera(std::uintptr_t image_base, std::uintptr_t client, bool ready, bool phase) noexcept;
 // Whether a plugin holds the skater still: noclip's input is then none.

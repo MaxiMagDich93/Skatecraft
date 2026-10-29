@@ -17,6 +17,7 @@
 #include "Engine/Game/World/client_state.h"
 #include "Extension/Plugins/plugin_runtime.h"
 #include "Extension/Plugins/plugin_game_runtime.h"
+#include "Extension/SkateCraft/skatecraft.h"
 #include "Engine/Game/World/load_completion.h"
 #include "Extension/ReplayKeyframes/replay_keyframes.h"
 #include "Extension/Skater/camera_observer.h"
@@ -1166,6 +1167,11 @@ void update_model(std::uintptr_t client, TickState& frame) {
         dingosdk::owned_bodies::tick(r.base, client, named_context_ready && !debug_busy);
         dingosdk::plugins::on_client_tick();
         dingosdk::plugins::tick_plugin_settings();
+    }
+    {
+        DINGO_PROFILE_ZONE("tick/skatecraft");
+        // After the plugins: SkateCraft borrows the game they use, and holds the camera after theirs.
+        dingosdk::skatecraft::tick(named_context_ready && !debug_busy);
     }
     if (!has_request && now < r.next_model && state == r.previous_state) return;
     r.next_model = now + 500;

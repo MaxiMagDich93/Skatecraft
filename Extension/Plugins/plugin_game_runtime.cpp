@@ -1952,6 +1952,7 @@ Game& real_game(std::uintptr_t image_base, const std::filesystem::path& storage)
     game->set_storage(storage);
     return *game;
 }
+Game* existing_game() noexcept { return the_game; }
 void apply_plugin_camera(std::uintptr_t image_base, std::uintptr_t client, bool ready, bool phase) noexcept {
     try {
         if (the_game) the_game->apply_camera(image_base, client, ready, phase);

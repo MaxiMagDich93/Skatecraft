@@ -233,6 +233,7 @@ const Commands &game_commands() {
         register_trainer_commands(*result);
         register_replay_keyframes_commands(*result);
         register_plugin_commands(*result);
+        register_skatecraft_commands(*result);
         // Each switch a player binds runs a command (controller_bindings.h action_binds): one whose
         // command is gone reads "Unknown command" at every press, as "menu" once did.
         for (const auto &bind : action_binds) {

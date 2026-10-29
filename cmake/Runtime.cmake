@@ -320,6 +320,17 @@ else()
 endif()
 dingosdk_version_info(dingosdk_runtime "ReSkate mod runtime" "ReSkate.dll" VFT_DLL)
 target_include_directories(dingosdk_runtime SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/External/steam_networking")
+
+# SkateCraft (Extension/SkateCraft): skate.'s end of SkyCraft's shared-memory link to Minecraft.
+target_sources(dingosdk_runtime PRIVATE
+    Extension/SkateCraft/skatecraft.cpp
+    Extension/SkateCraft/console_commands.cpp
+    Extension/SkateCraft/link.cpp
+    Extension/SkateCraft/collision_feed.cpp
+    Extension/SkateCraft/input_map.cpp
+    Extension/SkateCraft/player_drive.cpp
+    Extension/SkateCraft/overlay_feed.cpp)
+target_include_directories(dingosdk_runtime PRIVATE "${PROJECT_SOURCE_DIR}/External/skycraft_protocol")
 target_link_libraries(dingosdk_runtime PRIVATE dingosdk_lz4 dingosdk_zstd)
 
 # Menu fonts shared with the launcher (licences in External/fonts).

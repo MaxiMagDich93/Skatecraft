@@ -194,6 +194,14 @@ struct State {
     std::array<ComPtr<ID3D12Resource>, 16> plugin_textures, plugin_uploads;
     // Thunderstore icons for the Mod Manager page (store_icons.cpp), after the screen look's slots.
     std::array<ComPtr<ID3D12Resource>, 64> store_textures, store_uploads; // store_icon_slots
+    // SkateCraft's picture of Minecraft's screen (Extension/SkateCraft/overlay_feed.h), in
+    // minecraft_overlay_slot: one texture written every frame from one upload buffer kept mapped.
+    ComPtr<ID3D12Resource> minecraft_texture, minecraft_upload;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT minecraft_layout{};
+    void* minecraft_mapped{};
+    UINT minecraft_width{}, minecraft_height{};
+    ImTextureID minecraft_id{};
+    UINT64 minecraft_fence{}; // what the frame that last copied into it signals
     ComPtr<ID3D12GraphicsCommandList> commands;
     ComPtr<ID3D12Fence> fence;
     HANDLE fence_event = nullptr;
@@ -366,6 +374,8 @@ inline constexpr UINT store_icon_first_slot = screen_look_slot + screen_look_slo
 ImTextureID store_icon(const std::string& url);
 // Then a viewmodel's pictures (viewmodel.h): three for each of its at most eight materials.
 inline constexpr UINT viewmodel_first_slot = store_icon_first_slot + store_icon_slots, viewmodel_slots = 24;
+// Then SkateCraft's picture of Minecraft's screen (upload_minecraft_overlay).
+inline constexpr UINT minecraft_overlay_slot = viewmodel_first_slot + viewmodel_slots;
 struct StoreIconUpload {
     std::string url;
     int slot{};

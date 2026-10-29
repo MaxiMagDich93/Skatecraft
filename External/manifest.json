@@ -392,5 +392,13 @@
       "VM/src/lvmutils.cpp": "8758be8c575f1773d429d5236c6fc125c358659910fdf8a521bca59a830420e3",
       "lua_LICENSE.txt": "1d913b8bad19567e42303dfbc18e9c1e937c3c3f9ad64ae994f1bd18704dd020"
     }
+  },
+  "skycraft_protocol": {
+    "commit": "bfcaf178524b92c2cdeb88e4ce0f13ef9ded6f32",
+    "repository": "https://github.com/chasmlol/SkyCraft",
+    "files": {
+      "LICENSE": "adcf5b9966dd6f78b54bd6872d8fccfe4bd8e5d51186aa982dde7cb628087dd1",
+      "skycraft_protocol.h": "d7dd4da8201fabd34f97225b73cb2b2d9b1f70e7290978de33fa3cbad195a11e"
+    }
   }
 }
